@@ -40,7 +40,7 @@ Both templates require the following:
 
 # Templates dive-in
 
-There are a number of parameters used in both template, some of which need to be manually set at runtime.
+There are a number of parameters used in both templates, some of which need to be manually set at runtime.
 
 ### Parameters used in both templates:
 
