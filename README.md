@@ -15,7 +15,7 @@ For this I thank you, regardless of the outcome.
   
 # Technicalities
 
-Setting up and making centos7 work with cloudformation init was a challenge in itself. SElinux didn't cooperate either, but managed to not disabled it since I am a grown adult. The comments in the templates go in detail on what approach I applied in coding them.
+Setting up and making centos7 work with cloudformation init was a challenge in itself. SElinux didn't cooperate either but I managed to not disabled it since I am a grown adult. The comments in the templates go in detail on what approach I applied in coding them.
 
 The AWS cloudformation documentation has a set of very specific Joomla examples, almost too specific. My work is based on these templates, and much more work was done adapting the concepts to centos rather than amazon linux (the distro used in the examples). 
 
@@ -88,4 +88,6 @@ then deploy specifying only the parameters that don't have a default value, whic
 aws cloudformation create-stack --template-body file:///path/to/any_of_the_templates.yaml --stack-name YOUR_STACK_NAME --parameters ParameterKey=KeyName,ParameterValue=YOUR_VALUE ParameterKey=Subnets,ParameterValue=YOUR_VALUE ParameterKey=VpcId,ParameterValue=YOUR_VALUE
 
 ```
+
+or just use the Cloudformation GUI!
 
