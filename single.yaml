@@ -1,0 +1,363 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: This template deploys an official centos7 AMI (64bit) and install and configures Joomla! using an RDB MySql database. Unfortunately it only serves the application in HTTP.
+
+Parameters:
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: VpcId of your existing Virtual Private Cloud (VPC)
+    ConstraintDescription: must be the VPC Id of an existing Virtual Private Cloud.
+    
+  Subnets:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: The list of SubnetIds in your Virtual Private Cloud (VPC)
+    ConstraintDescription: >-
+      must be a list of at least two existing subnets associated with at least
+      two different availability zones. They should be residing in the selected
+      Virtual Private Cloud.
+      
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+    ConstraintDescription: must be a valid EC2 instance type.
+    
+  JoomlaUsername:
+    Default: admin
+    Description: The Joomla! admin account password
+    Type: String
+    MinLength: 5
+    MaxLength: 10
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: lenght 5 - 10, must contain only alphanumeric characters.  
+  
+  JoomlaPassword:
+    NoEcho: 'true'
+    Default: adminjoomla
+    Description: The Joomla! admin account password
+    Type: String
+    MinLength: 5
+    MaxLength: 15
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: lenght 5 - 10, must contain only alphanumeric characters.
+    
+  DBName:
+    Default: joomladb
+    Description: The Joomla! database name
+    Type: String
+    MinLength: 1
+    MaxLength: 10
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: lenght 5 - 10, must begin with a letter and contain only alphanumeric characters.
+    
+  DBUsername:
+    Default: admin
+    Description: The Joomla! database admin account username
+    Type: String
+    MinLength: 5
+    MaxLength: 10
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: lenght 5 - 10, must begin with a letter and contain only alphanumeric characters.
+    
+  DBPassword:
+    Default: password
+    NoEcho: 'true'
+    Description: The Joomla! database admin account password
+    Type: String
+    MinLength: 5
+    MaxLength: 10
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: lenght 5 - 10, must contain only alphanumeric characters.
+    
+  DBClass:
+    Default: db.t2.micro
+    Description: Database instance class
+    Type: String
+    AllowedValues:
+      - db.t2.micro
+    ConstraintDescription: must select a valid database instance type.
+    
+  DBAllocatedStorage:
+    Default: 5
+    Description: The size of the database (GB)
+    Type: Number
+    MinValue: 5
+    MaxValue: 8
+    ConstraintDescription: must be between 5 and 8 GB.
+    
+  SSHLocation:
+    Description: ' The IP address range that can be used to SSH to the EC2 instances'
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    
+  JoomlaVersion:
+    Description: The version of Joomla! that will be installed
+    Type: String
+    Default: 3-9-13
+    AllowedValues:
+      - 3-9-13
+      - 3-9-12
+      - 3-9-11
+      - 3-9-10
+      - 3-9-9
+      
+Resources:
+
+  ElasticLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
+    Metadata:
+      Comment: >-
+        Configure the Load Balancer with a simple health check and cookie-based
+        stickiness
+      'AWS::CloudFormation::Designer':
+        id: a11e7161-c02c-4431-9e19-cd65a2fd87b4
+    Properties:
+      AvailabilityZones: !GetAZs ''
+      LBCookieStickinessPolicy:
+        - PolicyName: CookieBasedPolicy
+          CookieExpirationPeriod: '30'
+      Listeners:
+        - LoadBalancerPort: '80'
+          InstancePort: '80'
+          Protocol: HTTP
+          PolicyNames:
+            - CookieBasedPolicy
+      HealthCheck:
+        Target: 'HTTP:80/'
+        HealthyThreshold: '2'
+        UnhealthyThreshold: '5'
+        Interval: '10'
+        Timeout: '5'
+        
+  ELBAlarm4xx:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: ELB served 4XX more than 10 times in the last 5 min
+      ActionsEnabled: true
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      MetricName: HTTPCode_ELB_4XX_Count
+      Namespace: AWS/ApplicationELB
+      Period: 300
+      Statistic: Sum
+      Threshold: 50
+      AlarmActions:
+        - 'arn:aws:sns:eu-west-1:ACCOUNT_ID:SNS_NAME'
+      Dimensions:
+        - Name: LoadBalancer
+          Value: LoadBalancer.LoadBalancerFullName
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 417d4e03-b8f9-47de-83ca-b6c2a20c6d94
+    DependsOn:
+      - ElasticLoadBalancer
+  WebServer:
+    Type: AWS::EC2::Instance
+    Metadata:
+      'AWS::CloudFormation::Init':
+        config:
+          packages:
+            yum:
+              httpd: []
+              mariadb: []
+          sources:
+            /var/www/html:  !Join ["", [ "https://downloads.joomla.org/cms/joomla3/",!Ref JoomlaVersion,"/Joomla_",!Ref JoomlaVersion,"-Stable-Full_Package.zip"] ]
+                                         
+          files:
+            /etc/cfn/cfn-hup.conf:
+                content: !Sub |
+                    [main]
+                    stack=${AWS::StackId}
+                    region=${AWS::Region}
+                    interval=1
+                    
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+                content: !Sub |
+                    [cfn-auto-reloader-hook]
+                    triggers=post.update
+                    path=Resources.Server.Metadata.AWS::CloudFormation::Init
+                    action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --region ${AWS::Region} --resource Server
+                    runas=root
+                    
+            /tmp/create_accounts.sql:
+                content: !Join ["", ["INSERT INTO `jos_users` (id, name, username, password) VALUES (62, 'Administrator', '", !Ref JoomlaUsername,"', MD5('", !Ref JoomlaPassword, "'));\n",
+                    "INSERT INTO `jos_user_usergroup_map` (`user_id`, `group_id`) VALUES (62,8);"]]
+                mode: '000644'
+                owner: root
+                group: root 
+                
+          services:
+            sysvinit:
+              httpd:
+                enabled: true
+                ensureRunning: true
+              cfn-hup:
+                enabled: true
+                ensureRunning: true
+    Properties:
+      ImageId: ami-0ff760d16d9497662
+      InstanceType: !Ref InstanceType
+      SecurityGroups:
+        - !Ref WebServerSecurityGroup
+      KeyName: !Ref KeyName
+      UserData: 
+                Fn::Base64: !Sub |
+                    #!/bin/bash
+                    yum install -y \
+                        https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm \
+                        http://rpms.remirepo.net/enterprise/remi-release-7.rpm \
+                        awscli \
+                        yum-utils 
+                        
+                    # php7 setup. Unfortunately we need this because centos7 serves php5 (EOL) on the default repos
+                    yum-config-manager --enable remi-php73 
+                    
+                    yum install -y \
+                        php \
+                        php-mcrypt \
+                        php-cli \
+                        php-gd \
+                        php-curl \
+                        php-mysql \
+                        php-ldap \
+                        php-zip \
+                        php-fileinfo \
+                        php73-php \
+                        php73-php-mysqld \
+                        php-pear \
+                        php-pear-MDB2 \
+                        php-xml  
+                    
+                    # start init
+                    /usr/bin/easy_install --script-dir /opt/aws/bin https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+                    cp -v /usr/lib/python2*/site-packages/aws_cfn_bootstrap*/init/redhat/cfn-hup /etc/init.d
+                    chmod +x /etc/init.d/cfn-hup
+                    /opt/aws/bin/cfn-init --stack ${AWS::StackId} --resource WebServer --region ${AWS::Region}
+                    
+                    # alter SElinux config allowing httpd to connect to a remote db
+                    # Ref: https://stackoverflow.com/questions/41178774/connect-database-error-type-2002-permission-denied
+                    setsebool -P httpd_can_network_connect_db 1
+                    
+                    # logrotate config
+                    sed -i '/*log {/a \    \weekly' /etc/logrotate.d/httpd
+                    
+                    # joomla mysql config
+                    sed 's/#__/jos_/g' /var/www/html/installation/sql/mysql/joomla.sql > /var/www/html/joomla.sql
+                    
+                    # populate db and create joomla admins credential
+                    mysql ${DBName} --host=${DBInstance.Endpoint.Address} --port=${DBInstance.Endpoint.Port} --user=${DBUsername} --password=${DBPassword} < /var/www/html/joomla.sql
+                    mysql ${DBName} --host=${DBInstance.Endpoint.Address} --port=${DBInstance.Endpoint.Port} --user=${DBUsername} --password=${DBPassword} < /tmp/create_accounts.sql
+                    
+                    # joomla configuration.php edits. Had to break it down for readability's sake
+                    cp /var/www/html/installation/configuration.php-dist /var/www/html/configuration.php
+                    sed -i 's/$user = '\'''\''/$user = '\''${DBUsername}'\''/g' /var/www/html/configuration.php
+                    sed -i 's/$password = '\'''\''/$password = '\''${DBPassword}'\''/g' /var/www/html/configuration.php
+                    sed -i 's/$db = '\'''\''/$db = '\''${DBName}'\''/g' /var/www/html/configuration.php
+                    sed -i 's/$host = '\''localhost'\''/$host = '\''${DBInstance.Endpoint.Address}:${DBInstance.Endpoint.Port}'\''/g' /var/www/html/configuration.php
+                    sed -i 's/$sitename = '\''Joomla!'\''/$sitename = '\''cms-kata'\''/g' /var/www/html/configuration.php
+                    # the default config sets the log dir to /administrator/logs and temp to /tmp, 
+                    # which of course dont exist. removing the / wasn't enough because apparently 
+                    # they used abs path for those two settings, so: 
+                    sed -i 's/\/tmp/\/var\/www\/html\/tmp/g' /var/www/html/configuration.php
+                    sed -i 's/\/administrator\/logs/\/var\/www\/html\/administrator\/logs/g'  /var/www/html/configuration.php
+                         
+                    mkdir -p /var/www/html/administrator/logs
+                    
+                    chown -R apache:apache /var/www/html
+                    
+                    # more selinux configs
+                    # this is a quick workaround that will grant rw on /var/www/html to httpd
+                    # selinuxs default on /var/www/html (httpd_sys_content_t) didn't allow httpd to write in it. 
+                    # decided to not troubleshoot further, instead:
+                    chcon -R -t httpd_sys_rw_content_t /var/www/html
+                    chcon -R -t httpd_cache_t   /var/www/html/administrator/cache
+                    chcon -R -t httpd_cache_t   /var/www/html/cache
+
+                    # enabling https. Haven't had success in making this work due to the fact that
+                    # I couldn't get a valid certificate and make it work for httpd.
+                    # Assuming this step done though, the Joomla configuration would be managed as follow:
+                    
+                    # edit configuration.php
+                    # sed -i 's/force_ssl = 0/force_ssl = 2/g' /var/www/html/configuration.php
+                    # sed -i 's/$live_site = '\'''\''/$live_site = '\''${ElasticLoadBalancer.DNSName}'\''/g' /var/www/html/configuration.php
+                    
+                    # append conf to htaccess.txt
+                    # cat << 'EOF' >> /var/www/html/htaccess.txt_bk
+                    # RewriteCond %{HTTPS} OFF
+                    # RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI}
+                    # EOF
+
+                    
+                    
+                    # cleanup
+                    rm -rf /var/www/html/installation 
+                    systemctl restart httpd
+                    
+                    # init completed
+                    /opt/aws/bin/cfn-signal -e 0 --stack ${AWS::StackName} --resource WebServer --region ${AWS::Region}
+    CreationPolicy: 
+        ResourceSignal:
+          Timeout: PT15M
+
+  DBSecurityGroup:
+    Type: 'AWS::RDS::DBSecurityGroup'
+    Properties:
+      DBSecurityGroupIngress:
+        EC2SecurityGroupName: !Ref WebServerSecurityGroup
+      GroupDescription: Frontend Access
+                      
+  DBInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+        DBName: !Ref DBName
+        Engine: MySQL
+        MultiAZ: false
+        MasterUsername: !Ref DBUsername
+        DBInstanceClass: !Ref DBClass
+        DBSecurityGroups:
+        - !Ref DBSecurityGroup
+        AllocatedStorage: !Ref DBAllocatedStorage
+        MasterUserPassword: !Ref DBPassword
+        
+  WebServerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allow connections from any source to port 80, and a user provided CIDR to access port 22
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Ref SSHLocation
+
+Outputs:
+  WebsiteURL:
+    Value: !Join 
+      - ''
+      - - 'http://'
+        - !GetAtt 
+          - WebServer
+          - DNSName
+    Description: Joomla! Website
+  AdminURL:
+    Value: !Join 
+      - ''
+      - - 'http://'
+        - !GetAtt 
+          - WebServer
+          - DNSName
+        - /administrator
+    Description: Joomla! Administration Website
