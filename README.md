@@ -1,17 +1,3 @@
-# Disclaimer
-
-This repository is my attemp at trying to come up with a solution for the CMS-kata (https://github.com/xpeppers/cms-kata) by Xpeppers 
-using my current expertise level on AWS and Linux Administration.
-
-I am going to be completely honest: it was brutal yet fun, and it was worth doing if only for the incredible amount of knowledge and opportunities to learn this kata put me through. 
-
-The reason why I had to split it into two templates is quite simple: I couldn't make autoscaling and elb to work, so I had to fall down to a more simple solution that implemented a single EC2 instance + RDB and served on http.
-
-I realize the solution offered doesn't comply with the kata requirements, and for that I apologize. I poured myself into it nonetheless and tried to tackle this new challenge at the best of my abilities. I learned a lot of new concepts and techniques, also got to take a peek of what Infrastructure as code really means and what it has to offer. 
-
-For this I thank you, regardless of the outcome.
-
-<br>
   
 # Technicalities
 
@@ -89,5 +75,5 @@ aws cloudformation create-stack --template-body file:///path/to/any_of_the_templ
 
 ```
 
-or just use the Cloudformation GUI!
+or just use the Cloudformation GUI.
 
