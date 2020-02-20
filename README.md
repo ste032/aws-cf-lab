@@ -5,7 +5,6 @@ Setting up and making centos7 work with cloudformation init was a challenge in i
 
 The AWS cloudformation documentation has a set of very specific Joomla examples, almost too specific. My work is based on these templates, and much more work was done adapting the concepts to centos rather than amazon linux (the distro used in the examples). 
 
-Also, json vs YAML: what a match! YAML every day.
 
 
 # Requirements
